@@ -6,17 +6,20 @@
 <title>Tactical Board — Free</title>
 <style>
   :root{--field-w:680px;--field-h:1050px;}
-  body {font-family: system-ui, Arial; margin: 18px; background:#f3f7f1; color:#0b3a2b;}
+  body {font-family: system-ui, Arial; margin: 18px; background:#f3f7f1; color:#0b3a2b; touch-action: manipulation;}
   h1 {margin:0 0 8px 0; font-size:18px;}
   .toolbar {display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;}
   button, select, input[type="color"] {padding:8px 10px; border-radius:6px; border:1px solid #cbd5c0; background:white; cursor:pointer;}
   button:hover{filter:brightness(.97)}
   #boardWrap { width:var(--field-w); border-radius:6px; overflow:hidden; box-shadow:0 6px 22px rgba(0,0,0,.12); }
-  svg.field { display:block; background: linear-gradient(0deg,#5da85d 0 10%, #4aa14a 10% 20%, #5da85d 20% 30%, #4aa14a 30% 40%, #5da85d 40% 50%, #4aa14a 50% 60%, #5da85d 60% 70%, #4aa14a 70% 80%, #5da85d 80% 90%, #4aa14a 90% 100%); width:100%; height:var(--field-h); overflow: visible;}
+  svg.field { display:block; background: linear-gradient(0deg,#5da85d 0 10%, #4aa14a 10% 20%, #5da85d 20% 30%, #4aa14a 30% 40%, #5da85d 40% 50%, #4aa14a 50% 60%, #5da85d 60% 70%, #4aa14a 70% 80%, #5da85d 80% 90%, #4aa14a 90% 100%); width:100%; height:auto; overflow: visible; touch-action: none;}
   .player { cursor:grab; }
   .player:active { cursor:grabbing; }
   .controls { margin-top:10px; font-size:13px; color:#345; }
   .small { font-size:13px; color:#345; }
+  @media (max-width: 700px) {
+    #boardWrap { width: 100%; max-width: var(--field-w); }
+  }
 </style>
 </head>
 <body>
@@ -39,7 +42,7 @@
   <button id="exportBtn">Export PNG</button>
   <button id="resetBtn">Clear</button>
   <div style="flex:1"></div>
-  <div class="small">Tip: double-click a circle to edit number • click to select</div>
+  <div class="small">Tip: double-click a circle to edit number • click to select • click field to move selected</div>
 </div>
 
 <div class="toolbar">
@@ -104,486 +107,501 @@
 </div>
 
 <script>
-  window.addEventListener('load', () => {      
-    (function(){
-      const svg = document.getElementById('field');
-      const playersLayer = document.getElementById('playersLayer');
-      const drawLayer = document.getElementById('drawLayer');
-      const addBlueBtn = document.getElementById('addBlueBtn');
-      const addRedBtn = document.getElementById('addRedBtn');
-      const addBallBtn = document.getElementById('addBallBtn');
-      const removeBtn = document.getElementById('removeBtn');
-      const exportBtn = document.getElementById('exportBtn');
-      const applyPreset = document.getElementById('applyPreset');
-      const presetSelect = document.getElementById('presetSelect');
-      const resetBtn = document.getElementById('resetBtn');
-      const saveBtn = document.getElementById('saveBtn');
-      const loadBtn = document.getElementById('loadBtn');
-      const status = document.getElementById('status');
-      const drawBtn = document.getElementById('drawBtn');
-      const eraseBtn = document.getElementById('eraseBtn');
-      const colorPicker = document.getElementById('colorPicker');
-      const penSize = document.getElementById('penSize');
-      const undoBtn = document.getElementById('undoBtn');
-      const clearDrawBtn = document.getElementById('clearDrawBtn');
+(function(){
+  const svg = document.getElementById('field');
+  const playersLayer = document.getElementById('playersLayer');
+  const drawLayer = document.getElementById('drawLayer');
+  const addBlueBtn = document.getElementById('addBlueBtn');
+  const addRedBtn = document.getElementById('addRedBtn');
+  const addBallBtn = document.getElementById('addBallBtn');
+  const removeBtn = document.getElementById('removeBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const applyPreset = document.getElementById('applyPreset');
+  const presetSelect = document.getElementById('presetSelect');
+  const resetBtn = document.getElementById('resetBtn');
+  const saveBtn = document.getElementById('saveBtn');
+  const loadBtn = document.getElementById('loadBtn');
+  const status = document.getElementById('status');
+  const drawBtn = document.getElementById('drawBtn');
+  const eraseBtn = document.getElementById('eraseBtn');
+  const colorPicker = document.getElementById('colorPicker');
+  const penSize = document.getElementById('penSize');
+  const undoBtn = document.getElementById('undoBtn');
+  const clearDrawBtn = document.getElementById('clearDrawBtn');
 
-      let players = []; // {id, x, y, num, team, type: 'player'|'ball', elem}
-      let drawings = []; // {id, color, width, points: [[x,y]], elem}
-      let selectedId = null;
-      let dragState = null; // {id, offsetX, offsetY, pointerId}
-      let currentAction = null; // for draw/erase
-      let drawMode = 'off'; // 'off', 'draw', 'erase'
-      let nextId = 1;
-      let nextDrawId = 1;
+  let players = []; // {id, x, y, num, team, type: 'player'|'ball', elem}
+  let drawings = []; // {id, color, width, points: [[x,y]], elem}
+  let selectedId = null;
+  let dragState = null; // {id, offsetX, offsetY, pointerId}
+  let currentAction = null; // for draw/erase
+  let drawMode = 'off'; // 'off', 'draw', 'erase'
+  let nextId = 1;
+  let nextDrawId = 1;
 
-      const FIELD_W = 680, FIELD_H = 1050;
+  const FIELD_W = 680, FIELD_H = 1050;
 
-      function forceRepaint(layer) {
-        layer.setAttribute('display', 'none');
-        setTimeout(() => layer.removeAttribute('display'), 0);
+  function forceRepaint(layer) {
+    layer.setAttribute('display', 'none');
+    setTimeout(() => layer.removeAttribute('display'), 0);
+  }
+
+  function createPlayerElem(p) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class','player');
+    g.setAttribute('data-id',p.id);
+
+    // circle
+    const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    circle.setAttribute('cx',0);
+    circle.setAttribute('cy',0);
+    circle.setAttribute('opacity', '0.95');
+    g.appendChild(circle);
+
+    if (p.type !== 'ball') {
+      // number label
+      const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+      text.setAttribute('x',0);
+      text.setAttribute('y',7);
+      text.setAttribute('text-anchor','middle');
+      text.setAttribute('font-size','18');
+      text.setAttribute('font-weight','600');
+      text.setAttribute('fill','#fff');
+      g.appendChild(text);
+    }
+
+    // attach listeners
+    g.addEventListener('dblclick', onDoubleClick);
+    g.addEventListener('click', onClickSelect);
+
+    playersLayer.appendChild(g);
+    p.elem = g;
+    attachDragListeners(p);
+  }
+
+  function attachDragListeners(p) {
+    if (p.elem) p.elem.addEventListener('pointerdown', onPointerDown);
+  }
+
+  function removeDragListeners(p) {
+    if (p.elem) p.elem.removeEventListener('pointerdown', onPointerDown);
+  }
+
+  function render() {
+    for (const p of players) {
+      if (!p.elem) createPlayerElem(p);
+      p.elem.setAttribute('transform',`translate(${p.x} ${p.y})`);
+      const circle = p.elem.querySelector('circle');
+      if (p.type === 'ball') {
+        circle.setAttribute('r',15);
+        circle.setAttribute('fill','#ffffff');
+        circle.setAttribute('stroke','#000000');
+        circle.setAttribute('stroke-width','2');
+      } else {
+        circle.setAttribute('r',26);
+        circle.setAttribute('fill', p.team === 'red' ? '#a81010' : '#0b4460');
+        circle.setAttribute('stroke', selectedId===p.id? '#ffd24a': '#0f2f3a');
+        circle.setAttribute('stroke-width', selectedId===p.id? '5':'3');
+        const text = p.elem.querySelector('text');
+        if (text) text.textContent = p.num;
       }
+    }
+    forceRepaint(playersLayer);
+  }
 
-      function createPlayerElem(p) {
-        const g = document.createElementNS('http://www.w3.org/2000/svg','g');
-        g.setAttribute('class','player');
-        g.setAttribute('data-id',p.id);
+  function renderDrawings() {
+    for (const d of drawings) {
+      if (!d.elem) {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('stroke', d.color);
+        path.setAttribute('stroke-width', d.width);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-linejoin', 'round');
+        updatePath(path, d.points);
+        drawLayer.appendChild(path);
+        d.elem = path;
+      }
+    }
+    forceRepaint(drawLayer);
+  }
 
-        // circle
-        const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
-        circle.setAttribute('cx',0);
-        circle.setAttribute('cy',0);
-        circle.setAttribute('opacity', '0.95');
-        g.appendChild(circle);
+  function getPlayerById(id) { return players.find(x => x.id===id); }
 
-        if (p.type !== 'ball') {
-          // number label
-          const text = document.createElementNS('http://www.w3.org/2000/svg','text');
-          text.setAttribute('x',0);
-          text.setAttribute('y',7);
-          text.setAttribute('text-anchor','middle');
-          text.setAttribute('font-size','18');
-          text.setAttribute('font-weight','600');
-          text.setAttribute('fill','#fff');
-          g.appendChild(text);
+  function getPoint(e) {
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+  }
+
+  // Pointer handlers for dragging:
+  function onPointerDown(e){
+    if (drawMode !== 'off') return;
+    e.preventDefault();
+    const g = e.currentTarget;
+    g.setPointerCapture(e.pointerId);
+    const id = Number(g.getAttribute('data-id'));
+    const loc = getPoint(e);
+    const p = getPlayerById(id);
+    dragState = { id, offsetX: loc.x - p.x, offsetY: loc.y - p.y, pointerId: e.pointerId};
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+  }
+
+  function onPointerMove(e){
+    if(!dragState || e.pointerId !== dragState.pointerId) return;
+    e.preventDefault();
+    const loc = getPoint(e);
+    const p = getPlayerById(dragState.id);
+    if(!p) return;
+    const margin = 40;
+    p.x = Math.max(margin, Math.min(FIELD_W - margin, loc.x - dragState.offsetX));
+    p.y = Math.max(margin, Math.min(FIELD_H - margin, loc.y - dragState.offsetY));
+    render();
+  }
+
+  function onPointerUp(e){
+    if(dragState && e.pointerId === dragState.pointerId){
+      dragState = null;
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+    }
+  }
+
+  function onDoubleClick(e){
+    e.stopPropagation();
+    const g = e.currentTarget;
+    const id = Number(g.getAttribute('data-id'));
+    const p = getPlayerById(id);
+    if (p.type === 'ball') return;
+    const newNum = prompt('Enter player number:', String(p.num));
+    if(newNum !== null){
+      p.num = newNum.trim() || p.num;
+      render();
+    }
+  }
+
+  function onClickSelect(e){
+    e.stopPropagation();
+    e.preventDefault();
+    const g = e.currentTarget;
+    const id = Number(g.getAttribute('data-id'));
+    selectedId = id;
+    render();
+  }
+
+  // Add player or ball
+  function addObject(type, team = null) {
+    const isBall = type === 'ball';
+    const start = { id: nextId++, x: FIELD_W/2 + (Math.random()*80-40), y: FIELD_H/2 + (Math.random()*80-40), num: isBall ? '' : players.filter(p => p.team === team && p.type === 'player').length + 1, team, type };
+    players.push(start);
+    selectedId = start.id;
+    render();
+  }
+
+  addBlueBtn.addEventListener('click', () => addObject('player', 'blue'));
+  addRedBtn.addEventListener('click', () => addObject('player', 'red'));
+  addBallBtn.addEventListener('click', () => addObject('ball'));
+
+  // Remove selected
+  removeBtn.addEventListener('click', ()=>{
+    if(selectedId==null) { alert('No item selected. Click a circle/ball to select it.'); return; }
+    const p = getPlayerById(selectedId);
+    if (p.elem) p.elem.remove();
+    players = players.filter(p=>p.id!==selectedId);
+    selectedId = null;
+    render();
+  });
+
+  // Reset
+  resetBtn.addEventListener('click', ()=>{
+    if(!confirm('Clear all players, balls, and drawings?')) return;
+    players.forEach(p => { if (p.elem) p.elem.remove(); });
+    players = [];
+    drawings.forEach(d => { if (d.elem) d.elem.remove(); });
+    drawings = [];
+    selectedId = null;
+    nextId = 1;
+    nextDrawId = 1;
+    render();
+    status.textContent = 'Cleared';
+    setTimeout(()=>status.textContent='',1200);
+  });
+
+  // Preset layouts
+  applyPreset.addEventListener('click', ()=>{
+    const n = Number(presetSelect.value);
+    applyPresetLayout(n);
+  });
+
+  function applyPresetLayout(n){
+    players.forEach(p => { if (p.elem) p.elem.remove(); });
+    players = [];
+    nextId = 1;
+    let bluePositions = [];
+    let blueNums = [];
+    if(n===5){
+      // GK + 2 def + 1 mid + 1 fwd
+      bluePositions = [
+        {x:340, y:990}, // GK #1
+        {x:240, y:790}, // def left
+        {x:440, y:790}, // def right
+        {x:340, y:600}, // mid
+        {x:340, y:520}  // fwd
+      ];
+      blueNums = ['1','2','3','4','5'];
+    } else if(n===7){
+      // 2-3-1: GK + 2 def + 3 mid (wings + center) + 1 fwd
+      bluePositions = [
+        {x:340, y:980}, // GK #1
+        {x:240, y:830}, // def #4 left
+        {x:440, y:830}, // def #5 right
+        {x:75, y:650}, // left winger #7
+        {x:600, y:650}, // right winger #11
+        {x:340, y:650}, // mid #6
+        {x:340, y:555}  // fwd #9
+      ];
+      blueNums = ['1','4','5','7','11','6','9'];
+    } else if(n===9){
+      // Simple 3-3-2: GK + 3 def + 3 mid + 2 fwd
+      bluePositions = [
+        {x:340, y:990}, // GK
+        {x:200, y:790}, {x:340, y:790}, {x:480, y:790}, // defs
+        {x:200, y:600}, {x:340, y:600}, {x:480, y:600}, // mids
+        {x:260, y:520}, {x:420, y:520}  // fwds
+      ];
+      blueNums = ['1','2','3','4','5','6','7','8','9'];
+    } else if(n===11){
+      // Simple 4-4-2: GK + 4 def + 4 mid + 2 fwd
+      bluePositions = [
+        {x:340, y:990}, // GK
+        {x:140, y:790}, {x:240, y:790}, {x:440, y:790}, {x:540, y:790}, // defs
+        {x:140, y:600}, {x:240, y:600}, {x:440, y:600}, {x:540, y:600}, // mids
+        {x:240, y:520}, {x:440, y:520}  // fwds
+      ];
+      blueNums = ['1','2','3','4','5','6','7','8','9','10','11'];
+    } else {
+      // fallback: spread vertically for blue
+      bluePositions = [];
+      for(let i=0;i<n;i++){
+        bluePositions.push({x:FIELD_W/2, y: 525 + (i/(n-1||1))*(FIELD_H/2 - 80)});
+      }
+      blueNums = Array.from({length: n}, (_, i) => (i+1).toString());
+    }
+
+    // Add blue team (home, bottom)
+    for(let i=0; i<bluePositions.length; i++){
+      players.push({id:nextId++, x:bluePositions[i].x, y:bluePositions[i].y, num:blueNums[i], team:'blue', type:'player'});
+    }
+
+    // Add red team (opponent, mirrored top)
+    const redPositions = bluePositions.map(pos => ({x:pos.x, y: FIELD_H - pos.y}));
+    for(let i=0; i<redPositions.length; i++){
+      players.push({id:nextId++, x:redPositions[i].x, y:redPositions[i].y, num:blueNums[i], team:'red', type:'player'});
+    }
+
+    selectedId = null;
+    render();
+  }
+
+  // Drawing and Erasing
+  function setDrawMode(mode) {
+    if (drawMode === mode) mode = 'off';
+    drawMode = mode;
+    drawBtn.textContent = mode === 'draw' ? 'Draw On' : 'Toggle Draw';
+    eraseBtn.textContent = mode === 'erase' ? 'Erase On' : 'Toggle Erase';
+    if (mode !== 'off') {
+      players.forEach(p => removeDragListeners(p));
+      svg.addEventListener('pointerdown', startAction);
+      svg.addEventListener('pointerup', endAction);
+      svg.style.cursor = mode === 'draw' ? 'crosshair' : 'not-allowed';
+    } else {
+      players.forEach(p => attachDragListeners(p));
+      svg.removeEventListener('pointerdown', startAction);
+      svg.removeEventListener('pointermove', continueAction);
+      svg.removeEventListener('pointerup', endAction);
+      svg.style.cursor = 'default';
+    }
+  }
+
+  drawBtn.addEventListener('click', () => setDrawMode('draw'));
+  eraseBtn.addEventListener('click', () => setDrawMode('erase'));
+
+  function startAction(e) {
+    e.preventDefault();
+    if (e.target.closest('.player')) return; // don't draw if clicking player
+    const loc = getPoint(e);
+    if (drawMode === 'draw') {
+      const color = colorPicker.value;
+      const width = penSize.value;
+      const dId = nextDrawId++;
+      const points = [[loc.x, loc.y]];
+      drawings.push({id: dId, color, width, points});
+      renderDrawings(); // create elem
+      currentAction = {type: 'draw', id: dId};
+    } else if (drawMode === 'erase') {
+      eraseAt(loc.x, loc.y);
+      currentAction = {type: 'erase'};
+    }
+    document.addEventListener('pointermove', continueAction);
+  }
+
+  function continueAction(e) {
+    e.preventDefault();
+    const loc = getPoint(e);
+    if (currentAction.type === 'draw') {
+      const drawing = drawings.find(d => d.id === currentAction.id);
+      if (drawing) {
+        drawing.points.push([loc.x, loc.y]);
+        updatePath(drawing.elem, drawing.points);
+      }
+    } else if (currentAction.type === 'erase') {
+      eraseAt(loc.x, loc.y);
+    }
+  }
+
+  function endAction(e) {
+    currentAction = null;
+    document.removeEventListener('pointermove', continueAction);
+  }
+
+  function updatePath(elem, points) {
+    const d = 'M' + points.map(p => p[0] + ',' + p[1]).join(' L');
+    elem.setAttribute('d', d);
+  }
+
+  function eraseAt(x, y) {
+    const threshold = 10 + Number(penSize.value) / 2;
+    drawings = drawings.filter(d => {
+      let keep = true;
+      d.points = d.points.filter(p => {
+        const dist = Math.hypot(p[0] - x, p[1] - y);
+        if (dist < threshold) {
+          keep = false;
         }
-
-        // attach listeners
-        g.addEventListener('dblclick', onDoubleClick);
-        g.addEventListener('click', onClickSelect);
-
-        playersLayer.appendChild(g);
-        p.elem = g;
-        attachDragListeners(p);
+        return dist >= threshold;
+      });
+      if (!keep || d.points.length < 2) {
+        if (d.elem) d.elem.remove();
+        return false;
+      } else {
+        updatePath(d.elem, d.points);
+        return true;
       }
+    });
+  }
 
-      function attachDragListeners(p) {
-        if (p.elem) p.elem.addEventListener('pointerdown', onPointerDown);
+  undoBtn.addEventListener('click', () => {
+    if (drawings.length > 0) {
+      const last = drawings.pop();
+      if (last.elem) last.elem.remove();
+    }
+  });
+
+  clearDrawBtn.addEventListener('click', () => {
+    drawings.forEach(d => { if (d.elem) d.elem.remove(); });
+    drawings = [];
+  });
+
+  // Export PNG (render SVG to canvas)
+  exportBtn.addEventListener('click', async ()=>{
+    const serializer = new XMLSerializer();
+    const cloneSvg = svg.cloneNode(true);
+    cloneSvg.setAttribute('xmlns','http://www.w3.org/2000/svg');
+    const svgStr = serializer.serializeToString(cloneSvg);
+    const img = new Image();
+    const svgBlob = new Blob([svgStr], {type: 'image/svg+xml;charset=utf-8'});
+    const url = URL.createObjectURL(svgBlob);
+    img.onload = function(){
+      const canvas = document.createElement('canvas');
+      canvas.width = FIELD_W * 2; canvas.height = FIELD_H * 2;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#4aa14a';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(img,0,0,canvas.width,canvas.height);
+      URL.revokeObjectURL(url);
+      const png = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = png;
+      a.download = 'tactic-board.png';
+      a.click();
+    };
+    img.onerror = ()=>alert('Could not export image (CORS/browser issue). Try a different browser.');
+    img.src = url;
+  });
+
+  // Save / Load localStorage
+  saveBtn.addEventListener('click', ()=>{
+    localStorage.setItem('tactic.players', JSON.stringify(players.map(p => ({id: p.id, x: p.x, y: p.y, num: p.num, team: p.team, type: p.type}))));
+    localStorage.setItem('tactic.drawings', JSON.stringify(drawings.map(d => ({id: d.id, color: d.color, width: d.width, points: d.points}))));
+    localStorage.setItem('tactic.nextId', String(nextId));
+    localStorage.setItem('tactic.nextDrawId', String(nextDrawId));
+    status.textContent = 'Saved';
+    setTimeout(()=>status.textContent='',1200);
+  });
+
+  loadBtn.addEventListener('click', ()=>{
+    const ps = localStorage.getItem('tactic.players');
+    const ds = localStorage.getItem('tactic.drawings');
+    if(!ps && !ds) { status.textContent='Nothing to load'; setTimeout(()=>status.textContent='',1200); return; }
+    try {
+      if (ps) {
+        players.forEach(p => { if (p.elem) p.elem.remove(); });
+        players = JSON.parse(ps);
+        nextId = Number(localStorage.getItem('tactic.nextId') || (players.reduce((m,p)=>Math.max(m,p.id),0)+1));
       }
-
-      function removeDragListeners(p) {
-        if (p.elem) p.elem.removeEventListener('pointerdown', onPointerDown);
+      if (ds) {
+        drawings.forEach(d => { if (d.elem) d.elem.remove(); });
+        drawings = JSON.parse(ds);
+        nextDrawId = Number(localStorage.getItem('tactic.nextDrawId') || (drawings.reduce((m,d)=>Math.max(m,d.id),0)+1));
+        renderDrawings();
       }
+      selectedId = null;
+      render();
+      status.textContent = 'Loaded';
+      setTimeout(()=>status.textContent='',1200);
+    } catch (err) {
+      alert('Load error: ' + err.message);
+    }
+  });
 
-      function render() {
-        for (const p of players) {
-          if (!p.elem) createPlayerElem(p);
-          p.elem.setAttribute('transform',`translate(${p.x} ${p.y})`);
-          const circle = p.elem.querySelector('circle');
-          if (p.type === 'ball') {
-            circle.setAttribute('r',15);
-            circle.setAttribute('fill','#ffffff');
-            circle.setAttribute('stroke','#000000');
-            circle.setAttribute('stroke-width','2');
-          } else {
-            circle.setAttribute('r',26);
-            circle.setAttribute('fill', p.team === 'red' ? '#a81010' : '#0b4460');
-            circle.setAttribute('stroke', selectedId===p.id? '#ffd24a': '#0f2f3a');
-            circle.setAttribute('stroke-width', selectedId===p.id? '5':'3');
-            const text = p.elem.querySelector('text');
-            if (text) text.textContent = p.num;
-          }
-        }
-        forceRepaint(playersLayer);
-      }
-
-      function renderDrawings() {
-        for (const d of drawings) {
-          if (!d.elem) {
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path.setAttribute('stroke', d.color);
-            path.setAttribute('stroke-width', d.width);
-            path.setAttribute('fill', 'none');
-            path.setAttribute('stroke-linecap', 'round');
-            path.setAttribute('stroke-linejoin', 'round');
-            updatePath(path, d.points);
-            drawLayer.appendChild(path);
-            d.elem = path;
-          }
-        }
-        forceRepaint(drawLayer);
-      }
-
-      function getPlayerById(id) { return players.find(x => x.id===id); }
-
-      function getPoint(e) {
-        const pt = svg.createSVGPoint();
-        pt.x = e.clientX; pt.y = e.clientY;
-        const ctm = svg.getScreenCTM();
-        if (!ctm) return { x: 0, y: 0 };
-        return pt.matrixTransform(ctm.inverse());
-      }
-
-      // Pointer handlers for dragging:
-      function onPointerDown(e){
-        if (drawMode !== 'off') return;
-        e.preventDefault();
-        const g = e.currentTarget;
-        g.setPointerCapture(e.pointerId);
-        const id = Number(g.getAttribute('data-id'));
-        const loc = getPoint(e);
-        const p = getPlayerById(id);
-        dragState = { id, offsetX: loc.x - p.x, offsetY: loc.y - p.y, pointerId: e.pointerId};
-        document.addEventListener('pointermove', onPointerMove);
-        document.addEventListener('pointerup', onPointerUp);
-      }
-
-      function onPointerMove(e){
-        if(!dragState || e.pointerId !== dragState.pointerId) return;
-        const loc = getPoint(e);
-        const p = getPlayerById(dragState.id);
-        if(!p) return;
-        const margin = 40;
-        p.x = Math.max(margin, Math.min(FIELD_W - margin, loc.x - dragState.offsetX));
-        p.y = Math.max(margin, Math.min(FIELD_H - margin, loc.y - dragState.offsetY));
-        render();
-      }
-
-      function onPointerUp(e){
-        if(dragState && e.pointerId === dragState.pointerId){
-          dragState = null;
-          document.removeEventListener('pointermove', onPointerMove);
-          document.removeEventListener('pointerup', onPointerUp);
-        }
-      }
-
-      function onDoubleClick(e){
-        e.stopPropagation();
-        const g = e.currentTarget;
-        const id = Number(g.getAttribute('data-id'));
-        const p = getPlayerById(id);
-        if (p.type === 'ball') return;
-        const newNum = prompt('Enter player number:', String(p.num));
-        if(newNum !== null){
-          p.num = newNum.trim() || p.num;
-          render();
-        }
-      }
-
-      function onClickSelect(e){
-        e.stopPropagation();
-        const g = e.currentTarget;
-        const id = Number(g.getAttribute('data-id'));
-        selectedId = id;
-        render();
-      }
-
-      // Add player or ball
-      function addObject(type, team = null) {
-        const isBall = type === 'ball';
-        const start = { id: nextId++, x: FIELD_W/2 + (Math.random()*80-40), y: FIELD_H/2 + (Math.random()*80-40), num: isBall ? '' : players.filter(p => p.team === team && p.type === 'player').length + 1, team, type };
-        players.push(start);
-        selectedId = start.id;
-        render();
-      }
-
-      addBlueBtn.addEventListener('click', () => addObject('player', 'blue'));
-      addRedBtn.addEventListener('click', () => addObject('player', 'red'));
-      addBallBtn.addEventListener('click', () => addObject('ball'));
-
-      // Remove selected
-      removeBtn.addEventListener('click', ()=>{
-        if(selectedId==null) { alert('No item selected. Click a circle/ball to select it.'); return; }
+  // Keyboard: delete selected
+  document.addEventListener('keydown', (ev)=>{
+    if(ev.key === 'Delete' || ev.key === 'Backspace'){
+      if(selectedId) {
         const p = getPlayerById(selectedId);
         if (p.elem) p.elem.remove();
         players = players.filter(p=>p.id!==selectedId);
         selectedId = null;
         render();
-      });
+      }
+    }
+  });
 
-      // Reset
-      resetBtn.addEventListener('click', ()=>{
-        if(!confirm('Clear all players, balls, and drawings?')) return;
-        players.forEach(p => { if (p.elem) p.elem.remove(); });
-        players = [];
-        drawings.forEach(d => { if (d.elem) d.elem.remove(); });
-        drawings = [];
+  // click on empty space: move selected or clear selection
+  svg.addEventListener('click', (e)=>{
+    e.preventDefault();
+    if (!e.target.closest('.player')) {
+      if (selectedId) {
+        const loc = getPoint(e);
+        const p = getPlayerById(selectedId);
+        const margin = 40;
+        p.x = Math.max(margin, Math.min(FIELD_W - margin, loc.x));
+        p.y = Math.max(margin, Math.min(FIELD_H - margin, loc.y));
         selectedId = null;
-        nextId = 1;
-        nextDrawId = 1;
         render();
-        status.textContent = 'Cleared';
-        setTimeout(()=>status.textContent='',1200);
-      });
-
-      // Preset layouts
-      applyPreset.addEventListener('click', ()=>{
-        const n = Number(presetSelect.value);
-        applyPresetLayout(n);
-      });
-
-      function applyPresetLayout(n){
-        players.forEach(p => { if (p.elem) p.elem.remove(); });
-        players = [];
-        nextId = 1;
-        let bluePositions = [];
-        let blueNums = [];
-        if(n===5){
-          // GK + 2 def + 1 mid + 1 fwd
-          bluePositions = [
-            {x:340, y:990}, // GK #1
-            {x:240, y:790}, // def left
-            {x:440, y:790}, // def right
-            {x:340, y:600}, // mid
-            {x:340, y:520}  // fwd
-          ];
-          blueNums = ['1','2','3','4','5'];
-        } else if(n===7){
-          // 2-3-1: GK + 2 def + 3 mid (wings + center) + 1 fwd
-          bluePositions = [
-            {x:340, y:980}, // GK #1
-            {x:240, y:830}, // def #4 left
-            {x:440, y:830}, // def #5 right
-            {x:75, y:650}, // left winger #7
-            {x:600, y:650}, // right winger #11
-            {x:340, y:650}, // mid #6
-            {x:340, y:555}  // fwd #9
-          ];
-          blueNums = ['1','4','5','7','11','6','9'];
-        } else if(n===9){
-          // Simple 3-3-2: GK + 3 def + 3 mid + 2 fwd
-          bluePositions = [
-            {x:340, y:990}, // GK
-            {x:200, y:790}, {x:340, y:790}, {x:480, y:790}, // defs
-            {x:200, y:600}, {x:340, y:600}, {x:480, y:600}, // mids
-            {x:260, y:520}, {x:420, y:520}  // fwds
-          ];
-          blueNums = ['1','2','3','4','5','6','7','8','9'];
-        } else if(n===11){
-          // Simple 4-4-2: GK + 4 def + 4 mid + 2 fwd
-          bluePositions = [
-            {x:340, y:990}, // GK
-            {x:140, y:790}, {x:240, y:790}, {x:440, y:790}, {x:540, y:790}, // defs
-            {x:140, y:600}, {x:240, y:600}, {x:440, y:600}, {x:540, y:600}, // mids
-            {x:240, y:520}, {x:440, y:520}  // fwds
-          ];
-          blueNums = ['1','2','3','4','5','6','7','8','9','10','11'];
-        } else {
-          // fallback: spread vertically for blue
-          bluePositions = [];
-          for(let i=0;i<n;i++){
-            bluePositions.push({x:FIELD_W/2, y: 525 + (i/(n-1||1))*(FIELD_H/2 - 80)});
-          }
-          blueNums = Array.from({length: n}, (_, i) => (i+1).toString());
-        }
-
-        // Add blue team (home, bottom)
-        for(let i=0; i<bluePositions.length; i++){
-          players.push({id:nextId++, x:bluePositions[i].x, y:bluePositions[i].y, num:blueNums[i], team:'blue', type:'player'});
-        }
-
-        // Add red team (opponent, mirrored top)
-        const redPositions = bluePositions.map(pos => ({x:pos.x, y: FIELD_H - pos.y}));
-        for(let i=0; i<redPositions.length; i++){
-          players.push({id:nextId++, x:redPositions[i].x, y:redPositions[i].y, num:blueNums[i], team:'red', type:'player'});
-        }
-
+      } else {
         selectedId = null;
         render();
       }
+    }
+  });
 
-      // Drawing and Erasing
-      function setDrawMode(mode) {
-        if (drawMode === mode) mode = 'off';
-        drawMode = mode;
-        drawBtn.textContent = mode === 'draw' ? 'Draw On' : 'Toggle Draw';
-        eraseBtn.textContent = mode === 'erase' ? 'Erase On' : 'Toggle Erase';
-        if (mode !== 'off') {
-          players.forEach(p => removeDragListeners(p));
-          svg.addEventListener('pointerdown', startAction);
-          svg.addEventListener('pointerup', endAction);
-          svg.style.cursor = mode === 'draw' ? 'crosshair' : 'not-allowed';
-        } else {
-          players.forEach(p => attachDragListeners(p));
-          svg.removeEventListener('pointerdown', startAction);
-          svg.removeEventListener('pointermove', continueAction);
-          svg.removeEventListener('pointerup', endAction);
-          svg.style.cursor = 'default';
-        }
-      }
+  // initial sample
+  applyPresetLayout(7);
 
-      drawBtn.addEventListener('click', () => setDrawMode('draw'));
-      eraseBtn.addEventListener('click', () => setDrawMode('erase'));
-
-      function startAction(e) {
-        e.preventDefault();
-        if (e.target.closest('.player')) return; // don't draw if clicking player
-        const loc = getPoint(e);
-        if (drawMode === 'draw') {
-          const color = colorPicker.value;
-          const width = penSize.value;
-          const dId = nextDrawId++;
-          const points = [[loc.x, loc.y]];
-          drawings.push({id: dId, color, width, points});
-          renderDrawings(); // create elem
-          currentAction = {type: 'draw', id: dId};
-        } else if (drawMode === 'erase') {
-          eraseAt(loc.x, loc.y);
-          currentAction = {type: 'erase'};
-        }
-        document.addEventListener('pointermove', continueAction);
-      }
-
-      function continueAction(e) {
-        const loc = getPoint(e);
-        if (currentAction.type === 'draw') {
-          const drawing = drawings.find(d => d.id === currentAction.id);
-          if (drawing) {
-            drawing.points.push([loc.x, loc.y]);
-            updatePath(drawing.elem, drawing.points);
-          }
-        } else if (currentAction.type === 'erase') {
-          eraseAt(loc.x, loc.y);
-        }
-      }
-
-      function endAction(e) {
-        currentAction = null;
-        document.removeEventListener('pointermove', continueAction);
-      }
-
-      function updatePath(elem, points) {
-        const d = 'M' + points.map(p => p[0] + ',' + p[1]).join(' L');
-        elem.setAttribute('d', d);
-      }
-
-      function eraseAt(x, y) {
-        const threshold = 10 + Number(penSize.value) / 2;
-        drawings = drawings.filter(d => {
-          for (let i = 0; i < d.points.length; i++) {
-            const px = d.points[i][0];
-            const py = d.points[i][1];
-            const dist = Math.hypot(px - x, py - y);
-            if (dist < threshold) {
-              d.elem.remove();
-              return false;
-            }
-          }
-          return true;
-        });
-      }
-
-      undoBtn.addEventListener('click', () => {
-        if (drawings.length > 0) {
-          const last = drawings.pop();
-          if (last.elem) last.elem.remove();
-        }
-      });
-
-      clearDrawBtn.addEventListener('click', () => {
-        drawings.forEach(d => { if (d.elem) d.elem.remove(); });
-        drawings = [];
-      });
-
-      // Export PNG (render SVG to canvas)
-      exportBtn.addEventListener('click', async ()=>{
-        const serializer = new XMLSerializer();
-        const cloneSvg = svg.cloneNode(true);
-        cloneSvg.setAttribute('xmlns','http://www.w3.org/2000/svg');
-        const svgStr = serializer.serializeToString(cloneSvg);
-        const img = new Image();
-        const svgBlob = new Blob([svgStr], {type: 'image/svg+xml;charset=utf-8'});
-        const url = URL.createObjectURL(svgBlob);
-        img.onload = function(){
-          const canvas = document.createElement('canvas');
-          canvas.width = FIELD_W * 2; canvas.height = FIELD_H * 2;
-          const ctx = canvas.getContext('2d');
-          ctx.fillStyle = '#4aa14a';
-          ctx.fillRect(0,0,canvas.width,canvas.height);
-          ctx.drawImage(img,0,0,canvas.width,canvas.height);
-          URL.revokeObjectURL(url);
-          const png = canvas.toDataURL('image/png');
-          const a = document.createElement('a');
-          a.href = png;
-          a.download = 'tactic-board.png';
-          a.click();
-        };
-        img.onerror = ()=>alert('Could not export image (CORS/browser issue). Try a different browser.');
-        img.src = url;
-      });
-
-      // Save / Load localStorage
-      saveBtn.addEventListener('click', ()=>{
-        localStorage.setItem('tactic.players', JSON.stringify(players.map(p => ({id: p.id, x: p.x, y: p.y, num: p.num, team: p.team, type: p.type}))));
-        localStorage.setItem('tactic.drawings', JSON.stringify(drawings.map(d => ({id: d.id, color: d.color, width: d.width, points: d.points}))));
-        localStorage.setItem('tactic.nextId', String(nextId));
-        localStorage.setItem('tactic.nextDrawId', String(nextDrawId));
-        status.textContent = 'Saved';
-        setTimeout(()=>status.textContent='',1200);
-      });
-
-      loadBtn.addEventListener('click', ()=>{
-        const ps = localStorage.getItem('tactic.players');
-        const ds = localStorage.getItem('tactic.drawings');
-        if(!ps && !ds) { status.textContent='Nothing to load'; setTimeout(()=>status.textContent='',1200); return; }
-        try {
-          if (ps) {
-            players.forEach(p => { if (p.elem) p.elem.remove(); });
-            players = JSON.parse(ps);
-            nextId = Number(localStorage.getItem('tactic.nextId') || (players.reduce((m,p)=>Math.max(m,p.id),0)+1));
-          }
-          if (ds) {
-            drawings.forEach(d => { if (d.elem) d.elem.remove(); });
-            drawings = JSON.parse(ds);
-            nextDrawId = Number(localStorage.getItem('tactic.nextDrawId') || (drawings.reduce((m,d)=>Math.max(m,d.id),0)+1));
-            renderDrawings();
-          }
-          selectedId = null;
-          render();
-          status.textContent = 'Loaded';
-          setTimeout(()=>status.textContent='',1200);
-        } catch (err) {
-          alert('Load error: ' + err.message);
-        }
-      });
-
-      // Keyboard: delete selected
-      document.addEventListener('keydown', (ev)=>{
-        if(ev.key === 'Delete' || ev.key === 'Backspace'){
-          if(selectedId) {
-            const p = getPlayerById(selectedId);
-            if (p.elem) p.elem.remove();
-            players = players.filter(p=>p.id!==selectedId);
-            selectedId = null;
-            render();
-          }
-        }
-      });
-
-      // click on empty space clears selection
-      svg.addEventListener('click', (e)=>{
-        if (!e.target.closest('.player')) {
-          selectedId = null;
-          render();
-        }
-      });
-
-      // initial sample
-      applyPresetLayout(7);
-
-      // expose for dev console if needed
-      window.tactic = { players, drawings, render, renderDrawings, applyPresetLayout };
-    })();
-  });    
+  // expose for dev console if needed
+  window.tactic = { players, drawings, render, renderDrawings, applyPresetLayout };
+})();
 </script>
 
 </body>
